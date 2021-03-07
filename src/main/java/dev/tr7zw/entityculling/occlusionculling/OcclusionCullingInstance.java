@@ -2,46 +2,93 @@ package dev.tr7zw.entityculling.occlusionculling;
 
 import java.util.Arrays;
 
+import dev.tr7zw.entityculling.EntityCullingMod;
 import net.minecraft.block.BlockState;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.world.ClientWorld;
+import net.minecraft.particle.ParticleTypes;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.chunk.WorldChunk;
 
 public class OcclusionCullingInstance {
 
-	public static Vec3d[] targets = new Vec3d[5];
-	
+	private Vec3d[] targets = new Vec3d[8];
+	private MinecraftClient client = MinecraftClient.getInstance();
+
 	public boolean isAABBVisible(Vec3d aabbBlock, AxisAlignedBB aabb, Vec3d playerLoc, boolean entity) {
 		try {
-			double width = aabb.getWidth();
-			double height = aabb.getHeight();
-			double depth = aabb.getDepth();
-			Vec3d center = entity ? aabbBlock.add(0, height/2, 0) : aabb.getAABBMiddle(aabbBlock);
-			Vec3d centerXZMin = center.add(-width / 2, 0, depth / 2);
-			Vec3d centerXMZMax = center.add(width / 2, 0, -depth / 2);
-			Vec3d centerYMin = center.add(0, -height / 2, 0);
-			Vec3d centerYMax = center.add(0, height / 2, 0);
-			Vec3d centerZMXMin = center.add(-width / 2, 0, -depth / 2);
-			Vec3d centerZXMax = center.add(width / 2, 0, depth / 2);
-			
-			targets[0] = center.subtract(playerLoc);
-			targets[1] = centerYMin.subtract(playerLoc);
-			targets[2] = centerYMax.subtract(playerLoc);
-			
-			if(centerXZMin.squaredDistanceTo(playerLoc) > centerXMZMax.squaredDistanceTo(playerLoc)) {
-				targets[3] = centerXZMin.subtract(playerLoc);
-			}else {
-				targets[3] = centerXMZMax.subtract(playerLoc);
+			int blockPlayerX = MathUtil.floor(playerLoc.x);
+			int blockPlayerY = MathUtil.floor(playerLoc.y);
+			int blockPlayerZ = MathUtil.floor(playerLoc.z);
+			int maxX;
+			int maxY;
+			int maxZ;
+			int minX;
+			int minY;
+			int minZ;
+			if (entity) {
+				maxX = MathUtil.ceil(aabb.maxx + 0.25) - blockPlayerX;
+				minX = MathUtil.floor(aabb.minx - 0.25) - blockPlayerX;
+				maxY = MathUtil.ceil(aabb.maxy + 0.25) - blockPlayerY;
+				minY = MathUtil.floor(aabb.miny - 0.25) - blockPlayerY;
+				maxZ = MathUtil.ceil(aabb.maxz + 0.25) - blockPlayerZ;
+				minZ = MathUtil.floor(aabb.minz - 0.25) - blockPlayerZ;
+			} else {
+				maxX = MathUtil.ceil(aabbBlock.x + aabb.maxx + 0.25) - blockPlayerX;
+				minX = MathUtil.floor(aabbBlock.x + aabb.minx - 0.25) - blockPlayerX;
+				maxY = MathUtil.ceil(aabbBlock.y + aabb.maxy + 0.25) - blockPlayerY;
+				minY = MathUtil.floor(aabbBlock.y + aabb.miny - 0.25) - blockPlayerY;
+				maxZ = MathUtil.ceil(aabbBlock.z + aabb.maxz + 0.25) - blockPlayerZ;
+				minZ = MathUtil.floor(aabbBlock.z + aabb.minz - 0.25) - blockPlayerZ;
 			}
-			if(centerZMXMin.squaredDistanceTo(playerLoc) > centerZXMax.squaredDistanceTo(playerLoc)) {
-				targets[4] = centerZMXMin.subtract(playerLoc);
-			}else {
-				targets[4] = centerZXMax.subtract(playerLoc);
-			}
-			if(isVisible(playerLoc, targets))return true;
 
+			Relative relX = Relative.from(minX, maxX);
+			Relative relY = Relative.from(minY, maxY);
+			Relative relZ = Relative.from(minZ + 1, maxZ + 1);
+			if (minX <= 0 && maxX > 0 && minY <= 0 && maxY >= 0 && minZ < 0 && maxZ >= 0) {
+				return true; // We are inside of the AABB, don't cull
+			}
+
+			Vec3d[] blocks = new Vec3d[(maxX - minX + 1) * (maxY - minY + 1) * (maxZ - minZ + 1)];
+			boolean[][] faceEdgeData = new boolean[(maxX - minX + 1) * (maxY - minY + 1) * (maxZ - minZ + 1)][];
+			int slot = 0;
+
+			boolean[] onFaceEdge = new boolean[6];
+			for (int x = minX; x < maxX; x++) {
+				onFaceEdge[0] = x == minX;
+				onFaceEdge[1] = x == maxX - 1;
+				for (int y = minY; y < maxY; y++) {
+					onFaceEdge[2] = y == minY;
+					onFaceEdge[3] = y == maxY - 1;
+					for (int z = minZ; z < maxZ; z++) {
+						int cVal = getCacheValue(x, y, z);
+						if (cVal == 1) {
+							return true;
+						}
+						if (cVal == 0) {
+							onFaceEdge[4] = z == minZ;
+							onFaceEdge[5] = z == maxZ - 1;
+							if ((onFaceEdge[0] && relX == Relative.POSITIVE)
+									|| (onFaceEdge[1] && relX == Relative.NEGATIVE)
+									|| (onFaceEdge[2] && relY == Relative.POSITIVE)
+									|| (onFaceEdge[3] && relY == Relative.NEGATIVE)
+									|| (onFaceEdge[4] && relZ == Relative.POSITIVE)
+									|| (onFaceEdge[5] && relZ == Relative.NEGATIVE)) {
+								blocks[slot] = new Vec3d(x, y, z);
+								faceEdgeData[slot] = Arrays.copyOf(onFaceEdge, 6);
+								slot++;
+							}
+						}
+					}
+				}
+			}
+			for (int i = 0; i < slot; i++) {
+				if (isVoxelVisible(playerLoc, blocks[i], faceEdgeData[i],
+						EntityCullingMod.instance.debugHitboxes && !entity)) {
+					return true;
+				}
+			}
 			return false;
 
 		} catch (Exception exception) {
@@ -49,31 +96,90 @@ public class OcclusionCullingInstance {
 		}
 		return true;
 	}
-	
-	private final int reach = 64;
-	private final byte[] cache = new byte[((reach*2)*(reach*2)*(reach*2))/4];
-	
-	public void resetCache() {
-		Arrays.fill(cache, (byte)0);
+
+	// -1 = invalid location, 0 = not checked yet, 1 = visible, 2 = blocked
+	private int getCacheValue(int x, int y, int z) {
+		int maxX = (int) Math.abs(x);
+		int maxY = (int) Math.abs(y);
+		int maxZ = (int) Math.abs(z);
+
+		if (maxX > reach - 2 || maxY > reach - 2 || maxZ > reach - 2)
+			return -1;
+
+		{// check if target is already known
+			int cx = (int) MathUtil.fastFloor(x + reach);
+			int cy = (int) MathUtil.fastFloor(y + reach);
+			int cz = (int) MathUtil.fastFloor(z + reach);
+			int keyPos = cx + cy * (reach * 2) + cz * (reach * 2) * (reach * 2);
+			int entry = keyPos / 4;
+			int offset = (keyPos % 4) * 2;
+			int cVal = cache[entry] >> offset & 3;
+			return cVal;
+		}
 	}
-	
+
+	private boolean isVoxelVisible(Vec3d playerLoc, Vec3d position, boolean[] faceEdgeData, boolean showDebug) {
+		int targetSize = 0;
+		// boolean onMinX = faceEdgeData[0];
+		// boolean onMaxX = faceEdgeData[1];
+		// boolean onMinY = faceEdgeData[2];
+		// boolean onMaxY = faceEdgeData[3];
+		// boolean onMinZ = faceEdgeData[4];
+		// boolean onMaxZ = faceEdgeData[5];
+		// main points for all faces
+		if (faceEdgeData[0] || faceEdgeData[4] || faceEdgeData[2]) {
+			targets[targetSize++] = position;
+		}
+		if (faceEdgeData[1]) {
+			targets[targetSize++] = position.add(0.95, 0, 0);
+		}
+		if (faceEdgeData[3]) {
+			targets[targetSize++] = position.add(0, 0.95, 0);
+		}
+		if (faceEdgeData[5]) {
+			targets[targetSize++] = position.add(0, 0, 0.95);
+		}
+		// Extra corner points
+		if ((faceEdgeData[4] && faceEdgeData[1] && faceEdgeData[3]) && (faceEdgeData[1] && faceEdgeData[3])) {
+			targets[targetSize++] = position.add(0.95, 0.95, 0);
+		}
+		if ((faceEdgeData[0] && faceEdgeData[5] && faceEdgeData[3]) || (faceEdgeData[5] && faceEdgeData[3])) {
+			targets[targetSize++] = position.add(0, 0.95, 0.95);
+		}
+		if (faceEdgeData[5] && faceEdgeData[1]) {
+			targets[targetSize++] = position.add(0.95, 0, 0.95);
+		}
+		if (faceEdgeData[1] && faceEdgeData[3] && faceEdgeData[5]) {
+			targets[targetSize++] = position.add(0.95, 0.95, 0.95);
+		}
+
+		if (showDebug) {
+			for (int i = 0; i < targetSize; i++) {
+				Vec3d target = targets[i];
+				client.world.addImportantParticle(ParticleTypes.HAPPY_VILLAGER, true, ((int) playerLoc.x) + target.x,
+						((int) playerLoc.y) + target.y, ((int) playerLoc.z) + target.z, 0, 0, 0);
+			}
+		}
+		return isVisible(playerLoc, targets, targetSize);
+	}
+
+	private final int reach = 64;
+	private final byte[] cache = new byte[((reach * 2) * (reach * 2) * (reach * 2)) / 4];
+
+	public void resetCache() {
+		Arrays.fill(cache, (byte) 0);
+	}
+
 	/**
 	 * returns the grid cells that intersect with this Vec3d<br>
 	 * <a href=
 	 * "http://playtechs.blogspot.de/2007/03/raytracing-on-grid.html">http://playtechs.blogspot.de/2007/03/raytracing-on-grid.html</a>
+	 * 
+	 * Caching assumes that all Vec3d's are inside the same block
 	 */
-	private boolean isVisible(Vec3d start, Vec3d[] targets) {
-		int maxX = 0;
-		int maxY = 0;
-		int maxZ = 0;
-		for(int i = 0; i < targets.length; i++) {
-			maxX = Math.max(maxX, (int)Math.abs(targets[i].x));
-			maxY = Math.max(maxY, (int)Math.abs(targets[i].y));
-			maxZ = Math.max(maxZ, (int)Math.abs(targets[i].z));
-		}
-		if(maxX > reach - 2 || maxY > reach - 2 || maxZ > reach - 2)return false;
-		
-		for(int v = 0; v < targets.length; v++) {
+	private boolean isVisible(Vec3d start, Vec3d[] targets, int size) {
+
+		for (int v = 0; v < size; v++) {
 			Vec3d target = targets[v];
 			// coordinates of start and target point
 			double x0 = start.getX();
@@ -82,17 +188,17 @@ public class OcclusionCullingInstance {
 			double x1 = x0 + target.getX();
 			double y1 = y0 + target.getY();
 			double z1 = z0 + target.getZ();
-	
+
 			// horizontal and vertical cell amount spanned
 			double dx = Math.abs(x1 - x0);
 			double dy = Math.abs(y1 - y0);
 			double dz = Math.abs(z1 - z0);
-	
+
 			// start cell coordinate
-			int x = (int) Math.floor(x0);
-			int y = (int) Math.floor(y0);
-			int z = (int) Math.floor(z0);
-	
+			int x = (int) MathUtil.floor(x0);
+			int y = (int) MathUtil.floor(y0);
+			int z = (int) MathUtil.floor(z0);
+
 			// distance between horizontal intersection points with cell border as a
 			// fraction of the total Vec3d length
 			double dt_dx = 1f / dx;
@@ -100,114 +206,139 @@ public class OcclusionCullingInstance {
 			// of the total Vec3d length
 			double dt_dy = 1f / dy;
 			double dt_dz = 1f / dz;
-	
+
 			// total amount of intersected cells
 			int n = 1;
-	
+
 			// 1, 0 or -1
 			// determines the direction of the next cell (horizontally / vertically)
 			int x_inc, y_inc, z_inc;
 			// the distance to the next horizontal / vertical intersection point with a cell
 			// border as a fraction of the total Vec3d length
 			double t_next_y, t_next_x, t_next_z;
-	
+
 			if (dx == 0f) {
 				x_inc = 0;
 				t_next_x = dt_dx; // don't increment horizontally because the Vec3d is perfectly vertical
 			} else if (x1 > x0) {
 				x_inc = 1; // target point is horizontally greater than starting point so increment every
 							// step by 1
-				n += (int) Math.floor(x1) - x; // increment total amount of intersecting cells
-				t_next_x = (float) ((Math.floor(x0) + 1 - x0) * dt_dx); // calculate the next horizontal intersection point based on the position inside
-																		// the first cell
+				n += (int) MathUtil.floor(x1) - x; // increment total amount of intersecting cells
+				t_next_x = (float) ((MathUtil.floor(x0) + 1 - x0) * dt_dx); // calculate the next horizontal
+																				// intersection
+				// point based on the position inside
+				// the first cell
 			} else {
 				x_inc = -1; // target point is horizontally smaller than starting point so reduce every step
 							// by 1
-				n += x - (int) Math.floor(x1); // increment total amount of intersecting cells
-				t_next_x = (float) ((x0 - Math.floor(x0)) * dt_dx); // calculate the next horizontal intersection point based on the position inside
-																	// the first cell
+				n += x - (int) MathUtil.floor(x1); // increment total amount of intersecting cells
+				t_next_x = (float) ((x0 - MathUtil.floor(x0)) * dt_dx); // calculate the next horizontal
+																			// intersection point
+				// based on the position inside
+				// the first cell
 			}
-	
+
 			if (dy == 0f) {
 				y_inc = 0;
 				t_next_y = dt_dy; // don't increment vertically because the Vec3d is perfectly horizontal
 			} else if (y1 > y0) {
 				y_inc = 1; // target point is vertically greater than starting point so increment every
 							// step by 1
-				n += (int) Math.floor(y1) - y; // increment total amount of intersecting cells
-				t_next_y = (float) ((Math.floor(y0) + 1 - y0) * dt_dy); // calculate the next vertical intersection point based on the position inside
-																		// the first cell
+				n += (int) MathUtil.floor(y1) - y; // increment total amount of intersecting cells
+				t_next_y = (float) ((MathUtil.floor(y0) + 1 - y0) * dt_dy); // calculate the next vertical
+																				// intersection
+				// point based on the position inside
+				// the first cell
 			} else {
 				y_inc = -1; // target point is vertically smaller than starting point so reduce every step
 							// by 1
-				n += y - (int) Math.floor(y1); // increment total amount of intersecting cells
-				t_next_y = (float) ((y0 - Math.floor(y0)) * dt_dy); // calculate the next vertical intersection point based on the position inside
-																	// the first cell
+				n += y - (int) MathUtil.floor(y1); // increment total amount of intersecting cells
+				t_next_y = (float) ((y0 - MathUtil.floor(y0)) * dt_dy); // calculate the next vertical intersection
+																			// point
+				// based on the position inside
+				// the first cell
 			}
-	
+
 			if (dz == 0f) {
 				z_inc = 0;
 				t_next_z = dt_dz; // don't increment vertically because the Vec3d is perfectly horizontal
 			} else if (z1 > z0) {
 				z_inc = 1; // target point is vertically greater than starting point so increment every
 							// step by 1
-				n += (int) Math.floor(z1) - z; // increment total amount of intersecting cells
-				t_next_z = (float) ((Math.floor(z0) + 1 - z0) * dt_dz); // calculate the next vertical intersection point based on the position inside
-																		// the first cell
+				n += (int) MathUtil.floor(z1) - z; // increment total amount of intersecting cells
+				t_next_z = (float) ((MathUtil.floor(z0) + 1 - z0) * dt_dz); // calculate the next vertical
+																				// intersection
+				// point based on the position inside
+				// the first cell
 			} else {
 				z_inc = -1; // target point is vertically smaller than starting point so reduce every step
 							// by 1
-				n += z - (int) Math.floor(z1); // increment total amount of intersecting cells
-				t_next_z = (float) ((z0 - Math.floor(z0)) * dt_dz); // calculate the next vertical intersection point based on the position inside
-																	// the first cell
+				n += z - (int) MathUtil.floor(z1); // increment total amount of intersecting cells
+				t_next_z = (float) ((z0 - MathUtil.floor(z0)) * dt_dz); // calculate the next vertical intersection
+																			// point
+				// based on the position inside
+				// the first cell
 			}
-	
-			boolean finished =stepRay(start, x0, y0, z0, x, y, z, dt_dx, dt_dy, dt_dz, n, x_inc, y_inc, z_inc, t_next_y, t_next_x,
-					t_next_z);
-			if(finished) {
+
+			boolean finished = stepRay(start, x, y, z, x, y, z, dt_dx, dt_dy, dt_dz, n, x_inc, y_inc, z_inc,
+					t_next_y, t_next_x, t_next_z);
+			if (finished) {
+				cacheResult(targets[0], true);
 				return true;
 			}
 		}
+		cacheResult(targets[0], false);
 		return false;
 	}
-	
-	private boolean stepRay(Vec3d start, double x0, double y0, double z0, int x, int y,
-			int z, double dt_dx, double dt_dy, double dt_dz, int n, int x_inc, int y_inc, int z_inc, double t_next_y,
-			double t_next_x, double t_next_z) {
+
+	private void cacheResult(Vec3d vector, boolean result) {
+		int cx = (int) MathUtil.fastFloor(vector.x + reach);
+		int cy = (int) MathUtil.fastFloor(vector.y + reach);
+		int cz = (int) MathUtil.fastFloor(vector.z + reach);
+		int keyPos = cx + cy * (reach * 2) + cz * (reach * 2) * (reach * 2);
+		int entry = keyPos / 4;
+		int offset = (keyPos % 4) * 2;
+		if (result) {
+			cache[entry] |= 1 << offset;
+		} else {
+			cache[entry] |= 1 << offset + 1;
+		}
+	}
+
+	private boolean stepRay(Vec3d start, int x0, int y0, int z0, int x, int y, int z, double dt_dx,
+			double dt_dy, double dt_dz, int n, int x_inc, int y_inc, int z_inc, double t_next_y, double t_next_x,
+			double t_next_z) {
 		int chunkX = 0;
 		int chunkZ = 0;
 		WorldChunk snapshot = null;
-		@SuppressWarnings("resource")
-		ClientWorld world =  MinecraftClient.getInstance().world;
-		
-		// iterate through all intersecting cells (n times)
-		for (; n > 0; n--) {
-			int cx = (int) Math.floor((x0 - x) + reach);
-			int cy = (int) Math.floor((y0 - y) + reach);
-			int cz = (int) Math.floor((z0 - z) + reach);
+		ClientWorld world = client.world;
 
-			int keyPos = cx + cy*(reach*2) + cz*(reach*2)*(reach*2);
-			int entry = keyPos/4;
-			int offset = (keyPos%4)*2;
+		// iterate through all intersecting cells (n times)
+		for (; n > 1; n--) { // n-1 times because we don't want to check the last block
+			int cx = (int) x - x0 + reach;
+			int cy = (int) y - y0 + reach;
+			int cz = (int) z - z0 + reach;
+
+			int keyPos = cx + cy * (reach * 2) + cz * (reach * 2) * (reach * 2);
+			int entry = keyPos / 4;
+			int offset = (keyPos % 4) * 2;
 			int cVal = cache[entry] >> offset & 3;
-			if(cVal == 2) {
+			if (cVal == 2) {
 				return false;
 			}
-			if(cVal == 0) {
+			if (cVal == 0) {
 				// save current cell
-				//Vec3d cp = new Vec3d(x, y, z);
-				int tchunkX = (int) Math.floor(x / 16d);
-				int tchunkZ = (int) Math.floor(z / 16d);
-				if(snapshot == null || chunkX != tchunkX || chunkZ != tchunkZ) {
+				int tchunkX = (int) MathUtil.fastFloor(x / 16d);
+				int tchunkZ = (int) MathUtil.fastFloor(z / 16d);
+				if (snapshot == null || chunkX != tchunkX || chunkZ != tchunkZ) {
 					chunkX = tchunkX;
 					chunkZ = tchunkZ;
-					snapshot = world.getChunk(chunkX, chunkZ);//CullingPlugin.instance.blockChangeListener.cachedChunkSnapshots.get(cc);
-					if(snapshot == null) {
-						//cache[cx][cy][cz] = 2;
+					snapshot = world.getChunk(chunkX, chunkZ);
+					if (snapshot == null) {
 						return false;
 					}
 				}
-				
+
 				int relativeX = x % 16;
 				if (relativeX < 0) {
 					relativeX = 16 + relativeX;
@@ -230,14 +361,15 @@ public class OcclusionCullingInstance {
 				}
 				BlockPos pos = new BlockPos(x, y, z);
 				BlockState state = snapshot.getBlockState(pos);
-				if(state.isOpaqueFullCube(world, pos)) {
+				if (state.isOpaqueFullCube(world, pos)) {
 					cache[entry] |= 1 << offset + 1;
 					return false;
 				}
 				cache[entry] |= 1 << offset;
 			}
 
-			if (t_next_y < t_next_x && t_next_y < t_next_z) { // next cell is upwards/downwards because the distance to the next vertical
+			if (t_next_y < t_next_x && t_next_y < t_next_z) { // next cell is upwards/downwards because the distance to
+																// the next vertical
 				// intersection point is smaller than to the next horizontal intersection point
 				y += y_inc; // move up/down
 				t_next_y += dt_dy; // update next vertical intersection point
@@ -251,6 +383,19 @@ public class OcclusionCullingInstance {
 
 		}
 		return true;
+	}
+
+	private enum Relative {
+		INSIDE, POSITIVE, NEGATIVE;
+
+		public static Relative from(int min, int max) {
+			if (max > 0 && min > 0) {
+				return POSITIVE;
+			} else if (min < 0 && max <= 0) {
+				return NEGATIVE;
+			}
+			return INSIDE;
+		}
 	}
 
 }
