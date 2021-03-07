@@ -18,21 +18,27 @@ public class OcclusionCullingInstance {
 
 	public boolean isAABBVisible(Vec3d aabbBlock, AxisAlignedBB aabb, Vec3d playerLoc, boolean entity) {
 		try {
+			int maxX;
+			int maxY;
+			int maxZ;
+			int minX;
+			int minY;
+			int minZ;
 			if (entity) {
-				aabb.maxx -= aabbBlock.x;
-				aabb.minx -= aabbBlock.x;
-				aabb.maxy -= aabbBlock.y;
-				aabb.miny -= aabbBlock.y;
-				aabb.maxz -= aabbBlock.z;
-				aabb.minz -= aabbBlock.z;
+				maxX = MathUtil.ceil(aabb.maxx + 0.25) - MathUtil.floor(playerLoc.x);
+				minX = MathUtil.floor(aabb.minx - 0.25) - MathUtil.floor(playerLoc.x);
+				maxY = MathUtil.ceil(aabb.maxy + 0.25) - MathUtil.floor(playerLoc.y);
+				minY = MathUtil.floor(aabb.miny - 0.25) - MathUtil.floor(playerLoc.y);
+				maxZ = MathUtil.ceil(aabb.maxz + 0.25) - MathUtil.floor(playerLoc.z);
+				minZ = MathUtil.floor(aabb.minz - 0.25) - MathUtil.floor(playerLoc.z);
+			} else {
+				maxX = MathUtil.ceil(aabbBlock.x + aabb.maxx + 0.25) - MathUtil.floor(playerLoc.x);
+				minX = MathUtil.floor(aabbBlock.x + aabb.minx - 0.25) - MathUtil.floor(playerLoc.x);
+				maxY = MathUtil.ceil(aabbBlock.y + aabb.maxy + 0.25) - MathUtil.floor(playerLoc.y);
+				minY = MathUtil.floor(aabbBlock.y + aabb.miny - 0.25) - MathUtil.floor(playerLoc.y);
+				maxZ = MathUtil.ceil(aabbBlock.z + aabb.maxz + 0.25) - MathUtil.floor(playerLoc.z);
+				minZ = MathUtil.floor(aabbBlock.z + aabb.minz - 0.25) - MathUtil.floor(playerLoc.z);
 			}
-			aabbBlock = aabbBlock.subtract(((int) playerLoc.x), ((int) playerLoc.y), ((int) playerLoc.z));
-			int maxX = (int) MathUtil.ceil(aabbBlock.x + aabb.maxx + 0.25);
-			int maxY = (int) MathUtil.ceil(aabbBlock.y + aabb.maxy + 0.25);
-			int maxZ = (int) MathUtil.ceil(aabbBlock.z + aabb.maxz + 0.25);
-			int minX = (int) MathUtil.fastFloor(aabbBlock.x + aabb.minx - 0.25);
-			int minY = (int) MathUtil.fastFloor(aabbBlock.y + aabb.miny - 0.25);
-			int minZ = (int) MathUtil.fastFloor(aabbBlock.z + aabb.minz - 0.25);
 
 			Relative relX = Relative.from(minX, maxX);
 			Relative relY = Relative.from(minY, maxY);
@@ -306,9 +312,9 @@ public class OcclusionCullingInstance {
 
 		// iterate through all intersecting cells (n times)
 		for (; n > 1; n--) { // n-1 times because we don't want to check the last block
-			int cx = (int) MathUtil.fastFloor((x - (int) x0) + reach);
-			int cy = (int) MathUtil.fastFloor((y - (int) y0) + reach);
-			int cz = (int) MathUtil.fastFloor((z - (int) z0) + reach);
+			int cx = (int) x - MathUtil.floor(x0) + reach;
+			int cy = (int) y - MathUtil.floor(y0) + reach;
+			int cz = (int) z - MathUtil.floor(z0) + reach;
 
 			int keyPos = cx + cy * (reach * 2) + cz * (reach * 2) * (reach * 2);
 			int entry = keyPos / 4;
