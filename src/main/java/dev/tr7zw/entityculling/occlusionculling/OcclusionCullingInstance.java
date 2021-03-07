@@ -18,6 +18,9 @@ public class OcclusionCullingInstance {
 
 	public boolean isAABBVisible(Vec3d aabbBlock, AxisAlignedBB aabb, Vec3d playerLoc, boolean entity) {
 		try {
+			int blockPlayerX = MathUtil.floor(playerLoc.x);
+			int blockPlayerY = MathUtil.floor(playerLoc.y);
+			int blockPlayerZ = MathUtil.floor(playerLoc.z);
 			int maxX;
 			int maxY;
 			int maxZ;
@@ -25,19 +28,19 @@ public class OcclusionCullingInstance {
 			int minY;
 			int minZ;
 			if (entity) {
-				maxX = MathUtil.ceil(aabb.maxx + 0.25) - MathUtil.floor(playerLoc.x);
-				minX = MathUtil.floor(aabb.minx - 0.25) - MathUtil.floor(playerLoc.x);
-				maxY = MathUtil.ceil(aabb.maxy + 0.25) - MathUtil.floor(playerLoc.y);
-				minY = MathUtil.floor(aabb.miny - 0.25) - MathUtil.floor(playerLoc.y);
-				maxZ = MathUtil.ceil(aabb.maxz + 0.25) - MathUtil.floor(playerLoc.z);
-				minZ = MathUtil.floor(aabb.minz - 0.25) - MathUtil.floor(playerLoc.z);
+				maxX = MathUtil.ceil(aabb.maxx + 0.25) - blockPlayerX;
+				minX = MathUtil.floor(aabb.minx - 0.25) - blockPlayerX;
+				maxY = MathUtil.ceil(aabb.maxy + 0.25) - blockPlayerY;
+				minY = MathUtil.floor(aabb.miny - 0.25) - blockPlayerY;
+				maxZ = MathUtil.ceil(aabb.maxz + 0.25) - blockPlayerZ;
+				minZ = MathUtil.floor(aabb.minz - 0.25) - blockPlayerZ;
 			} else {
-				maxX = MathUtil.ceil(aabbBlock.x + aabb.maxx + 0.25) - MathUtil.floor(playerLoc.x);
-				minX = MathUtil.floor(aabbBlock.x + aabb.minx - 0.25) - MathUtil.floor(playerLoc.x);
-				maxY = MathUtil.ceil(aabbBlock.y + aabb.maxy + 0.25) - MathUtil.floor(playerLoc.y);
-				minY = MathUtil.floor(aabbBlock.y + aabb.miny - 0.25) - MathUtil.floor(playerLoc.y);
-				maxZ = MathUtil.ceil(aabbBlock.z + aabb.maxz + 0.25) - MathUtil.floor(playerLoc.z);
-				minZ = MathUtil.floor(aabbBlock.z + aabb.minz - 0.25) - MathUtil.floor(playerLoc.z);
+				maxX = MathUtil.ceil(aabbBlock.x + aabb.maxx + 0.25) - blockPlayerX;
+				minX = MathUtil.floor(aabbBlock.x + aabb.minx - 0.25) - blockPlayerX;
+				maxY = MathUtil.ceil(aabbBlock.y + aabb.maxy + 0.25) - blockPlayerY;
+				minY = MathUtil.floor(aabbBlock.y + aabb.miny - 0.25) - blockPlayerY;
+				maxZ = MathUtil.ceil(aabbBlock.z + aabb.maxz + 0.25) - blockPlayerZ;
+				minZ = MathUtil.floor(aabbBlock.z + aabb.minz - 0.25) - blockPlayerZ;
 			}
 
 			Relative relX = Relative.from(minX, maxX);
@@ -277,7 +280,7 @@ public class OcclusionCullingInstance {
 				// the first cell
 			}
 
-			boolean finished = stepRay(start, x0, y0, z0, x, y, z, dt_dx, dt_dy, dt_dz, n, x_inc, y_inc, z_inc,
+			boolean finished = stepRay(start, x, y, z, x, y, z, dt_dx, dt_dy, dt_dz, n, x_inc, y_inc, z_inc,
 					t_next_y, t_next_x, t_next_z);
 			if (finished) {
 				cacheResult(targets[0], true);
@@ -302,7 +305,7 @@ public class OcclusionCullingInstance {
 		}
 	}
 
-	private boolean stepRay(Vec3d start, double x0, double y0, double z0, int x, int y, int z, double dt_dx,
+	private boolean stepRay(Vec3d start, int x0, int y0, int z0, int x, int y, int z, double dt_dx,
 			double dt_dy, double dt_dz, int n, int x_inc, int y_inc, int z_inc, double t_next_y, double t_next_x,
 			double t_next_z) {
 		int chunkX = 0;
@@ -312,9 +315,9 @@ public class OcclusionCullingInstance {
 
 		// iterate through all intersecting cells (n times)
 		for (; n > 1; n--) { // n-1 times because we don't want to check the last block
-			int cx = (int) x - MathUtil.floor(x0) + reach;
-			int cy = (int) y - MathUtil.floor(y0) + reach;
-			int cz = (int) z - MathUtil.floor(z0) + reach;
+			int cx = (int) x - x0 + reach;
+			int cy = (int) y - y0 + reach;
+			int cz = (int) z - z0 + reach;
 
 			int keyPos = cx + cy * (reach * 2) + cz * (reach * 2) * (reach * 2);
 			int entry = keyPos / 4;
